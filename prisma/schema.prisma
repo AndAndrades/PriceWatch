@@ -1,0 +1,92 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+  
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum PriceDirection {
+  UP
+  DOWN
+  UNCHANGED
+}
+
+enum ScrapeStatus {
+  SUCCESS
+  FAILED
+}
+
+model Category {
+  id            String    @id @default(cuid())
+  name          String
+  url           String    @unique
+  store         String    @default("Falabella")
+  totalProducts Int       @default(0)
+  lastScrapedAt DateTime  @default(now())
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  products      Product[]
+
+  @@index([isActive])
+}
+
+model Product {
+  id              String         @id @default(cuid())
+  url             String         @unique
+  name            String
+  imageUrl        String?        @db.Text
+  currentPrice    Decimal        @db.Decimal(12, 2)
+  previousPrice   Decimal?       @db.Decimal(12, 2)
+  minPrice        Decimal        @db.Decimal(12, 2)
+  maxPrice        Decimal        @db.Decimal(12, 2)
+  inStock         Boolean        @default(true)
+  firstDetectedAt DateTime       @default(now())
+  lastUpdatedAt   DateTime       @default(now())
+  lastScrapedAt   DateTime       @default(now())
+  isActive        Boolean        @default(true)
+
+  categoryId      String?
+  category        Category?      @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  histories       PriceHistory[]
+  scrapeLogs      ScrapeLog[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@index([lastUpdatedAt])
+  @@index([isActive])
+  @@index([categoryId])
+}
+
+model PriceHistory {
+  id                     String         @id @default(cuid())
+  productId              String
+  product                Product        @relation(fields: [productId], references: [id], onDelete: Cascade)
+  price                  Decimal        @db.Decimal(12, 2)
+  previousPrice          Decimal?       @db.Decimal(12, 2)
+  priceChange            Decimal        @db.Decimal(12, 2)
+  priceChangePercentage  Decimal        @db.Decimal(8, 2)
+  direction              PriceDirection
+  detectedAt             DateTime       @default(now())
+
+  @@index([productId, detectedAt(sort: Desc)])
+}
+
+model ScrapeLog {
+  id           String       @id @default(cuid())
+  productId    String
+  product      Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  status       ScrapeStatus
+  priceFound   Decimal?     @db.Decimal(12, 2)
+  durationMs   Int
+  errorMessage String?      @db.Text
+  executedAt   DateTime     @default(now())
+
+  @@index([productId, executedAt(sort: Desc)])
+  @@index([status])
+}
