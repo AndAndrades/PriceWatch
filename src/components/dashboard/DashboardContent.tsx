@@ -30,12 +30,25 @@ export function DashboardContent({ products, stats }: DashboardContentProps) {
   const [isModalOpen, setIsModalOpen] = useState(false);
 
   // Filter products
-  const filteredProducts = products.filter((p) => {
-    const matchesSearch = p.name.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesCategory = !selectedCategoryId || p.categoryId === selectedCategoryId;
+  const filteredProducts = (products || []).filter((p) => {
+    // 1. Coincidencia por nombre (defensivo ante nulos)
+    const matchesSearch = (p.name || "")
+      .toLowerCase()
+      .includes(searchTerm.toLowerCase());
+
+    // 2. Coincidencia por Categoría (Normalizada a String)
+    const matchesCategory =
+      !selectedCategoryId ||
+      selectedCategoryId === "ALL" ||
+      selectedCategoryId === "" ||
+      String(p.categoryId) === String(selectedCategoryId);
+
+    // 3. Dirección de precio (Historial)
     const direction = p.histories?.[0]?.direction || "UNCHANGED";
-    if (filterDirection === "ALL") return matchesSearch && matchesCategory;
-    return matchesSearch && matchesCategory && direction === filterDirection;
+    const matchesDirection =
+      filterDirection === "ALL" || direction === filterDirection;
+
+    return matchesSearch && matchesCategory && matchesDirection;
   });
 
   // Sort products
@@ -109,25 +122,22 @@ export function DashboardContent({ products, stats }: DashboardContentProps) {
           <div className="flex items-center gap-1 bg-slate-900 p-1 rounded-xl border border-slate-800 text-xs font-semibold">
             <button
               onClick={() => setFilterDirection("ALL")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filterDirection === "ALL" ? "bg-cyan-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={`px-3 py-1.5 rounded-lg transition-all ${filterDirection === "ALL" ? "bg-cyan-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
             >
               Todos ({products.length})
             </button>
             <button
               onClick={() => setFilterDirection("DOWN")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filterDirection === "DOWN" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={`px-3 py-1.5 rounded-lg transition-all ${filterDirection === "DOWN" ? "bg-emerald-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
             >
               🟢 Bajaron ({products.filter((p) => p.histories?.[0]?.direction === "DOWN").length})
             </button>
             <button
               onClick={() => setFilterDirection("UP")}
-              className={`px-3 py-1.5 rounded-lg transition-all ${
-                filterDirection === "UP" ? "bg-rose-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={`px-3 py-1.5 rounded-lg transition-all ${filterDirection === "UP" ? "bg-rose-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
             >
               🔴 Subieron ({products.filter((p) => p.histories?.[0]?.direction === "UP").length})
             </button>
@@ -160,18 +170,16 @@ export function DashboardContent({ products, stats }: DashboardContentProps) {
           <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800">
             <button
               onClick={() => setViewMode("GRID")}
-              className={`p-1.5 rounded-lg transition-all ${
-                viewMode === "GRID" ? "bg-blue-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === "GRID" ? "bg-blue-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
               title="Vista en Tarjetas (SoloTodo Grid)"
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode("TABLE")}
-              className={`p-1.5 rounded-lg transition-all ${
-                viewMode === "TABLE" ? "bg-blue-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
-              }`}
+              className={`p-1.5 rounded-lg transition-all ${viewMode === "TABLE" ? "bg-blue-600 text-white shadow" : "text-slate-400 hover:text-slate-200"
+                }`}
               title="Vista en Tabla Completa"
             >
               <List className="w-4 h-4" />
