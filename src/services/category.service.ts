@@ -1,5 +1,6 @@
 import { db } from "@/lib/db";
-import { FalabellaCategoryScraper } from "@/scraper/falabella/category-scraper";
+import { CategoryScraperFactory } from "@/scraper/core/scraper-factory";
+import { ScraperOptions } from "@/scraper/core/types";
 import { Prisma } from "@prisma/client";
 
 export class CategoryService {
@@ -21,13 +22,11 @@ export class CategoryService {
   /**
    * Scrapes category URL and auto-imports all products into DB.
    */
-  static async createAndScrapeCategory(url: string, maxPages: number = 2) {
-    const scraper = new FalabellaCategoryScraper();
-    if (!scraper.canHandle(url)) {
-      throw new Error("La URL provista no corresponde a una categoría válida de Falabella.");
-    }
+  static async createAndScrapeCategory(url: string, maxPages: number = 2, options?: ScraperOptions) {
+    const scraper = CategoryScraperFactory.getScraperForUrl(url);
+    const scrapedData = await scraper.scrapeCategory(url, maxPages, options);
 
-    const scrapedData = await scraper.scrapeCategory(url, maxPages);
+    const storeName = scrapedData.store || (url.includes("paris.cl") ? "Paris" : "Falabella");
 
     // Create or update Category record in DB
     const category = await db.category.upsert({
@@ -35,13 +34,14 @@ export class CategoryService {
       create: {
         name: scrapedData.categoryName,
         url: scrapedData.categoryUrl,
-        store: "Falabella",
+        store: storeName,
         totalProducts: scrapedData.products.length,
         lastScrapedAt: new Date(),
         isActive: true,
       },
       update: {
         name: scrapedData.categoryName,
+        store: storeName,
         totalProducts: scrapedData.products.length,
         lastScrapedAt: new Date(),
         isActive: true,
@@ -163,13 +163,13 @@ export class CategoryService {
   /**
    * Syncs existing category products.
    */
-  static async syncCategory(categoryId: string) {
+  static async syncCategory(categoryId: string, options?: ScraperOptions) {
     const category = await db.category.findUnique({ where: { id: categoryId } });
     if (!category) {
       throw new Error(`Categoría con ID ${categoryId} no encontrada`);
     }
 
-    return await this.createAndScrapeCategory(category.url);
+    return await this.createAndScrapeCategory(category.url, 2, options);
   }
 
   /**

@@ -32,7 +32,12 @@ export async function POST(req: Request) {
     const { url } = parseResult.data;
 
     // Auto-detect if URL is a Category or Product
-    if (url.includes("/category/")) {
+    const cleanPath = url.split("?")[0];
+    const isCategory =
+      cleanPath.includes("/category/") ||
+      (cleanPath.includes("paris.cl") && !cleanPath.endsWith(".html"));
+
+    if (isCategory) {
       const result = await CategoryService.createAndScrapeCategory(url, 2);
       return NextResponse.json(
         {

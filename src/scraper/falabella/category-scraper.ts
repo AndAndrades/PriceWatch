@@ -1,27 +1,24 @@
-import { isFalabellaChileUrl } from "@/lib/validators/product.validator";
+import { isFalabellaChileUrl } from "../../lib/validators/product.validator";
+import {
+  CategoryScraper,
+  ScrapedCategoryData,
+  ScrapedCategoryProduct,
+  ScraperOptions,
+} from "../core/types";
+import { fetchPageHtmlWithBrowser, sleep } from "../core/browser-helper";
 
-export interface ScrapedCategoryProduct {
-  name: string;
-  url: string;
-  imageUrl: string | null;
-  currentPrice: number;
-  previousPrice: number | null;
-  inStock: boolean;
-}
+export type { ScrapedCategoryProduct, ScrapedCategoryData };
 
-export interface ScrapedCategoryData {
-  categoryName: string;
-  categoryUrl: string;
-  totalProductsInStore: number;
-  products: ScrapedCategoryProduct[];
-}
-
-export class FalabellaCategoryScraper {
+export class FalabellaCategoryScraper implements CategoryScraper {
   canHandle(url: string): boolean {
-    return isFalabellaChileUrl(url) && url.includes("/category/");
+    return isFalabellaChileUrl(url) && (url.includes("/category/") || url.includes("/falabella-cl/"));
   }
 
-  async scrapeCategory(url: string, maxPages: number = 2): Promise<ScrapedCategoryData> {
+  async scrapeCategory(
+    url: string,
+    maxPages: number = 2,
+    options?: ScraperOptions
+  ): Promise<ScrapedCategoryData> {
     const cleanUrl = url.split("?")[0];
     let categoryName = "Categoría Falabella";
     let totalProductsInStore = 0;
@@ -29,9 +26,15 @@ export class FalabellaCategoryScraper {
     const seenUrls = new Set<string>();
 
     for (let page = 1; page <= maxPages; page++) {
+      if (page > 1) {
+        // Delay between page requests to avoid hitting rate limits and 403 blocks
+        const pageDelay = options?.waitDelayMs ?? 2000;
+        await sleep(pageDelay);
+      }
+
       const pageUrl = `${cleanUrl}?page=${page}`;
       try {
-        const pageData = await this.scrapePage(pageUrl);
+        const pageData = await this.scrapePage(pageUrl, options);
         if (!pageData) break;
 
         if (pageData.categoryName && categoryName === "Categoría Falabella") {
@@ -65,20 +68,37 @@ export class FalabellaCategoryScraper {
     return {
       categoryName,
       categoryUrl: cleanUrl,
+      store: "Falabella",
       totalProductsInStore: totalProductsInStore || allProducts.length,
       products: allProducts,
     };
   }
 
-  private async scrapePage(url: string) {
+  private async scrapePage(url: string, options?: ScraperOptions) {
+    if (options?.preferredTransport === "fetch") {
+      try {
+        const html = await this.scrapePageViaFetch(url, options);
+        return this.parseCategoryHtml(html, url);
+      } catch {
+        // Fallback to browser if fetch fails
+      }
+    }
+
+    // Direct stealth browser navigation without 403 failure latency
+    const html = await fetchPageHtmlWithBrowser(url, options);
+    return this.parseCategoryHtml(html, url);
+  }
+
+  private async scrapePageViaFetch(url: string, options?: ScraperOptions): Promise<string> {
+    const timeoutMs = options?.timeoutMs ?? 12000;
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 12000);
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
       const response = await fetch(url, {
         headers: {
           "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
           Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
           "Accept-Language": "es-CL,es;q=0.9,en-US;q=0.8,en;q=0.7",
           "Cache-Control": "no-cache",
@@ -94,7 +114,11 @@ export class FalabellaCategoryScraper {
       }
 
       const html = await response.text();
-      return this.parseCategoryHtml(html, url);
+      if (html.includes("<title>Cloudflare</title>") || html.includes("cf-browser-verification")) {
+        throw new Error("HTTP 403 Cloudflare challenge detectado en la página de categoría");
+      }
+
+      return html;
     } catch (err) {
       clearTimeout(timeoutId);
       throw err;

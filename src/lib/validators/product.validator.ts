@@ -23,13 +23,32 @@ export function isFalabellaChileUrl(urlStr: string): boolean {
   }
 }
 
+/**
+ * Validates whether a given URL is a valid Paris Chile product or category URL.
+ */
+export function isParisChileUrl(urlStr: string): boolean {
+  try {
+    const parsed = new URL(urlStr);
+    return parsed.hostname === "paris.cl" || parsed.hostname.endsWith(".paris.cl");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Validates whether a given URL belongs to any supported store (Falabella, Paris).
+ */
+export function isSupportedStoreUrl(urlStr: string): boolean {
+  return isFalabellaChileUrl(urlStr) || isParisChileUrl(urlStr);
+}
+
 export const addProductSchema = z.object({
   url: z
     .string()
     .trim()
     .url("Debe ingresar una URL válida")
-    .refine(isFalabellaChileUrl, {
-      message: "La URL debe corresponder a un producto de Falabella Chile (falabella.com)",
+    .refine(isSupportedStoreUrl, {
+      message: "La URL debe corresponder a una tienda soportada: Falabella Chile o Paris Chile",
     }),
 });
 

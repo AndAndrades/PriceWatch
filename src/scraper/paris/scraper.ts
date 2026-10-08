@@ -1,41 +1,48 @@
 import { ProductScraper, ScrapedProduct, ScraperOptions } from "../core/types";
 import { fetchPageHtmlWithBrowser, sleep } from "../core/browser-helper";
-import { parseFalabellaHtml } from "./parser";
-import { isFalabellaChileUrl } from "../../lib/validators/product.validator";
+import { parseParisHtml } from "./parser";
+import { isParisChileUrl } from "../../lib/validators/product.validator";
 
-export class FalabellaScraper implements ProductScraper {
+export class ParisScraper implements ProductScraper {
   canHandle(url: string): boolean {
-    return isFalabellaChileUrl(url);
+    return isParisChileUrl(url);
   }
 
   async scrape(url: string, options?: ScraperOptions): Promise<ScrapedProduct> {
     if (!this.canHandle(url)) {
-      throw new Error(`FalabellaScraper no soporta la URL provista: ${url}`);
+      throw new Error(`ParisScraper no soporta la URL provista: ${url}`);
     }
 
     const retries = options?.retries ?? 1;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        // If explicitly requested fetch mode (not default)
-        if (options?.preferredTransport === "fetch") {
-          const fetchResult = await this.scrapeViaFetch(url, options);
-          if (fetchResult) return fetchResult;
+        // Tier 1: Fast HTTP Fetch
+        try {
+          const scrapedData = await this.scrapeViaFetch(url, options);
+          if (scrapedData) {
+            return scrapedData;
+          }
+        } catch (fetchErr) {
+          console.warn(
+            `[ParisScraper] Fetch directo falló o fue bloqueado, recurriendo a navegador: ${
+              fetchErr instanceof Error ? fetchErr.message : String(fetchErr)
+            }`
+          );
         }
 
-        // Falabella defaults directly to stealth browser with anti-detection evasion
-        // to prevent 403 Cloudflare blocks without wasting time on failed fetch requests
+        // Tier 2: Resilient Stealth Browser Fallback
         return await this.scrapeViaBrowser(url, options);
       } catch (err) {
         if (attempt < retries) {
-          const retryDelay = (options?.waitDelayMs ?? 2500) * (attempt + 1);
+          const retryDelay = (options?.waitDelayMs ?? 3000) * (attempt + 1);
           console.warn(
-            `[FalabellaScraper] Intento ${attempt + 1} falló para ${url}. Reintentando tras ${retryDelay}ms...`
+            `[ParisScraper] Intento ${attempt + 1} falló para ${url}. Reintentando tras ${retryDelay}ms...`
           );
           await sleep(retryDelay);
         } else {
           throw new Error(
-            `FalabellaScraper falló después de ${retries + 1} intento(s) para ${url}: ${
+            `ParisScraper falló después de ${retries + 1} intento(s) para ${url}: ${
               err instanceof Error ? err.message : String(err)
             }`
           );
@@ -44,14 +51,6 @@ export class FalabellaScraper implements ProductScraper {
     }
 
     throw new Error(`Error inesperado al scrapear ${url}`);
-  }
-
-  private async scrapeViaBrowser(
-    url: string,
-    options?: ScraperOptions
-  ): Promise<ScrapedProduct> {
-    const html = await fetchPageHtmlWithBrowser(url, options);
-    return parseFalabellaHtml(html, url);
   }
 
   private async scrapeViaFetch(
@@ -72,14 +71,6 @@ export class FalabellaScraper implements ProductScraper {
           "Accept-Language": "es-CL,es;q=0.9,en-US;q=0.8",
           "Cache-Control": "no-cache",
           Pragma: "no-cache",
-          "Sec-Ch-Ua": '"Chromium";v="131", "Not_A Brand";v="24", "Google Chrome";v="131"',
-          "Sec-Ch-Ua-Mobile": "?0",
-          "Sec-Ch-Ua-Platform": '"Windows"',
-          "Sec-Fetch-Dest": "document",
-          "Sec-Fetch-Mode": "navigate",
-          "Sec-Fetch-Site": "none",
-          "Sec-Fetch-User": "?1",
-          "Upgrade-Insecure-Requests": "1",
         },
         signal: controller.signal,
       });
@@ -91,14 +82,23 @@ export class FalabellaScraper implements ProductScraper {
       }
 
       const html = await response.text();
+
       if (html.includes("<title>Cloudflare</title>") || html.includes("cf-browser-verification")) {
-        throw new Error("HTTP 403 Cloudflare challenge detectado en la respuesta");
+        throw new Error("HTTP 403 Cloudflare challenge detectado en Paris");
       }
 
-      return parseFalabellaHtml(html, url);
+      return parseParisHtml(html, url);
     } catch (err) {
       clearTimeout(timeoutId);
       throw err;
     }
+  }
+
+  private async scrapeViaBrowser(
+    url: string,
+    options?: ScraperOptions
+  ): Promise<ScrapedProduct> {
+    const html = await fetchPageHtmlWithBrowser(url, options);
+    return parseParisHtml(html, url);
   }
 }

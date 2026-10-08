@@ -1,5 +1,7 @@
 import { db } from "@/lib/db";
 import { ScraperFactory } from "@/scraper/core/scraper-factory";
+import { ScraperOptions } from "@/scraper/core/types";
+import { sleep } from "@/scraper/core/browser-helper";
 import { calculatePriceChange } from "@/domain/price-change";
 import { Prisma } from "@prisma/client";
 
@@ -7,13 +9,13 @@ export class ScraperService {
   /**
    * Scrapes product URL for the first time and saves product + initial history + scrape log.
    */
-  static async createAndScrapeProduct(url: string) {
+  static async createAndScrapeProduct(url: string, options?: ScraperOptions) {
     const startTime = Date.now();
     const scraper = ScraperFactory.getScraperForUrl(url);
 
     let scraped;
     try {
-      scraped = await scraper.scrape(url);
+      scraped = await scraper.scrape(url, options);
     } catch (err) {
       const durationMs = Date.now() - startTime;
       const errorMsg = err instanceof Error ? err.message : String(err);
@@ -83,7 +85,7 @@ export class ScraperService {
   /**
    * Checks price for a single existing product, compares with previous, creates history if changed.
    */
-  static async checkProductPrice(productId: string) {
+  static async checkProductPrice(productId: string, options?: ScraperOptions) {
     const product = await db.product.findUnique({ where: { id: productId } });
     if (!product) {
       throw new Error(`Producto con ID ${productId} no encontrado`);
@@ -93,7 +95,7 @@ export class ScraperService {
     const scraper = ScraperFactory.getScraperForUrl(product.url);
 
     try {
-      const scraped = await scraper.scrape(product.url);
+      const scraped = await scraper.scrape(product.url, options);
       const durationMs = Date.now() - startTime;
       const newPriceNum = scraped.currentPrice;
       const currentPriceNum = Number(product.currentPrice);
@@ -176,8 +178,9 @@ export class ScraperService {
   /**
    * Orchestrates price check for ALL active products in background/cron mode.
    * Handles errors individually so one failing product never stops execution for others.
+   * Introduces an anti-403 pause between consecutive product requests.
    */
-  static async checkAllProducts() {
+  static async checkAllProducts(options?: ScraperOptions) {
     const products = await db.product.findMany({
       where: { isActive: true },
       select: { id: true, name: true, url: true },
@@ -190,9 +193,17 @@ export class ScraperService {
       errors: [] as Array<{ productId: string; name: string; error: string }>,
     };
 
-    for (const p of products) {
+    for (let i = 0; i < products.length; i++) {
+      const p = products[i];
+
+      // Delay between consecutive requests to avoid triggering rate limit / 403 blocks
+      if (i > 0) {
+        const delayBetweenRequests = options?.waitDelayMs ?? 2500;
+        await sleep(delayBetweenRequests);
+      }
+
       try {
-        await this.checkProductPrice(p.id);
+        await this.checkProductPrice(p.id, options);
         results.succeeded++;
       } catch (err) {
         results.failed++;

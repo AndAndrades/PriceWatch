@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { isFalabellaChileUrl } from "@/lib/validators/product.validator";
+import { isSupportedStoreUrl } from "@/lib/validators/product.validator";
 import { X, Link2, Loader2, AlertCircle, CheckCircle2, ShoppingCart, Sparkles, FolderTree } from "lucide-react";
 
 interface QuickAddModalProps {
@@ -30,12 +30,12 @@ export function QuickAddModal({ isOpen, onClose, onSuccess }: QuickAddModalProps
     const trimmedUrl = url.trim();
 
     if (!trimmedUrl) {
-      setError("Ingresa una URL de Falabella Chile.");
+      setError("Ingresa una URL de Falabella o Paris.");
       return;
     }
 
-    if (!isFalabellaChileUrl(trimmedUrl)) {
-      setError("La URL debe ser de un producto o categoría de Falabella Chile (falabella.com)");
+    if (!isSupportedStoreUrl(trimmedUrl)) {
+      setError("La URL debe ser de un producto o categoría de Falabella Chile o Paris Chile");
       return;
     }
 
